@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Descarcă PDF-ul reparat | DiacriticeFix.ro</title>
+    <link rel="stylesheet" href="style.css">
+    <meta name="robots" content="noindex, nofollow">
+    <script src="https://js.stripe.com/v3/"></script>
+</head>
+<body>
+    <header class="page-header">
+        <div class="container logo">
+            <a href="index.html" style="display: flex; align-items: center; text-decoration: none; color: white;">
+                <img src="logo.png" alt="DiacriticeFix Logo" class="logo-img">
+            </a>
+        </div>
+    </header>
+    
+    <div class="container">
+        <div class="payment-thankyou" id="thankYouPage">
+            <h2>Mulțumim pentru plată!</h2>
+            <p>PDF-ul dumneavoastră va fi descărcat automat în 5 secunde.</p>
+            <a href="#" class="download-link hidden" id="downloadLink">Descarcă acum</a>
+        </div>
+    </div>
+    
+    <footer class="page-footer">
+        <p>&copy; 2025 GhamTech S.R.L. Toate drepturile rezervate.</p>
+        <p>CUI: 50686976 | Sediu: Str. Nicolae Bălcescu, Nr. 12, Bacău, România</p>
+    </footer>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const fileId = urlParams.get('file_id');
+            
+            console.log('Download page loaded with file_id:', fileId);
+            
+            if (fileId) {
+                const thankYouPage = document.getElementById('thankYouPage');
+                const downloadLink = document.getElementById('downloadLink');
+                
+                // Get the file content
+                fetch(`/.netlify/functions/get-file?file_id=${fileId}`)
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Failed to fetch file');
+                        }
+                        return response.blob();
+                    })
+                    .then(blob => {
+                        // Create download link
+                        const url = window.URL.createObjectURL(blob);
+                        const fileName = 'document_reparat.pdf';
+                        
+                        downloadLink.href = url;
+                        downloadLink.download = fileName;
+                        downloadLink.textContent = 'Descarcă PDF-ul reparat';
+                        downloadLink.classList.remove('hidden');
+                        
+                        // Auto-click download after 5 seconds
+                        setTimeout(() => {
+                            console.log('Auto-triggering download');
+                            downloadLink.click();
+                            thankYouPage.innerHTML = '<h2>Descărcare finalizată!</h2><p>Poți închide această pagină acum.</p>';
+                            
+                            // Clean up
+                            window.URL.revokeObjectURL(url);
+                            
+                            // Redirect back to home page after 3 seconds
+                            setTimeout(() => {
+                                window.location.href = '/';
+                            }, 3000);
+                        }, 5000);
+                    })
+                    .catch(error => {
+                        console.error('Error in file download:', error);
+                        thankYouPage.innerHTML = `
+                            <h2>Eroare la descărcare</h2>
+                            <p>A apărut o eroare la descărcarea fișierului.</p>
+                            <p>Vă rugăm să contactați suportul la: <a href="mailto:ghamtech@ghamtech.com">ghamtech@ghamtech.com</a></p>
+                        `;
+                    });
+            } else {
+                document.getElementById('thankYouPage').innerHTML = `
+                    <h2>Link invalid</h2>
+                    <p>Link-ul de descărcare este invalid sau a expirat.</p>
+                    <p>Vă rugăm să încercați din nou procesul de plată sau contactați suportul.</p>
+                `;
+            }
+        });
+    </script>
+</body>
+</html>
