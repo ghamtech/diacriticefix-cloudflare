@@ -3,59 +3,258 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DiacriticeFix - Cloudflare</title>
-  <style>
-    body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f0f0f0; }
-    .container { max-width: 800px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-    h1 { color: #e91e63; margin-bottom: 20px; }
-    .status { background: #e8f5e9; padding: 20px; border-radius: 8px; margin: 20px 0; color: #2e7d32; font-weight: bold; }
-    .instructions { background: #e3f2fd; padding: 20px; border-radius: 8px; margin: 20px 0; text-align: left; }
-    .btn { background: #4CAF50; color: white; border: none; padding: 15px 30px; font-size: 18px; border-radius: 5px; cursor: pointer; margin: 10px; }
-    .btn:hover { background: #45a049; }
-    footer { margin-top: 40px; color: #666; font-size: 0.9rem; }
-  </style>
+  <title>Repară PDF-uri cu diacritice stricate | diacriticefix.ro</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="favicon.png">
+  <script src="https://js.stripe.com/v3/"></script>
 </head>
 <body>
+  <header>
+    <div class="container header-content">
+      <div class="logo">
+        <img src="logo.png" alt="DiacriticeFix" class="logo-img">
+      </div>
+      <nav>
+        <ul>
+          <li><a href="#how-it-works">Cum funcționează</a></li>
+          <li><a href="#faq">FAQ</a></li>
+          <li><a href="termeni.html">Termeni</a></li>
+          <li><a href="politica.html">Politica</a></li>
+          <li><a href="#contact">Contact</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <section class="hero">
+    <div class="container">
+      <h1>Repară PDF-uri cu diacritice stricate în 15 secunde</h1>
+      <p style="font-size: 1.6rem; margin-top: 20px; color: #ffeb3b; font-weight: bold;">
+        Doar <span style="font-size: 2rem;">1.99€</span> per document
+      </p>
+    </div>
+  </section>
+
   <div class="container">
-    <h1>✅ DiacriticeFix is LIVE on Cloudflare!</h1>
-    
-    <div class="status">
-      Your app is working perfectly!<br>
-      Next: Connect your domain diacriticefix.ro to Cloudflare
+    <div class="upload-section" id="how-it-works">
+      <h2>Încarcă documentul tău</h2>
+      
+      <div class="upload-area" id="dropArea">
+        <div id="filePreview" class="file-preview hidden">
+          <div class="file-icon">📄</div>
+          <div class="file-name" id="fileName">Document.pdf</div>
+          <div class="file-size" id="fileSize">1.2 MB</div>
+        </div>
+        <div id="uploadInstructions" class="upload-instructions">
+          <p>Trage aici fișierul PDF sau</p>
+          <input type="file" id="pdfUpload" accept="application/pdf" style="display: none;">
+          <button class="btn" id="browseBtn">Caută pe calculator</button>
+        </div>
+      </div>
+      
+      <button class="btn" id="repairBtn" disabled>Repară PDF-ul acum</button>
+      
+      <div id="uploadStatus" class="upload-status hidden">
+        <p>✅ Fișierul <span id="statusFileName">Document.pdf</span> a fost încărcat!</p>
+      </div>
     </div>
-    
-    <div class="instructions">
-      <h3>How to fix the "site can't be reached" error:</h3>
-      <ol>
-        <li>Go to <strong>Cloudflare Pages</strong> dashboard</li>
-        <li>Click your project → <strong>Custom domains</strong></li>
-        <li>Add domain: <strong>diacriticefix.ro</strong></li>
-        <li>Follow the DNS instructions shown</li>
-        <li>Wait 5 minutes (or up to 48 hours for full DNS update)</li>
-      </ol>
+
+    <div class="payment-container hidden" id="paymentContainer">
+      <h3>Plătește 1.99€ pentru a descărca PDF-ul reparat</h3>
+      <button class="btn" id="payButton">Plătește cu cardul</button>
+      <p class="small-text">Plată securizată prin Stripe</p>
     </div>
-    
-    <button class="btn" onclick="window.location.href='/test-api'">Test API</button>
-    <button class="btn" onclick="alert('In production: Upload PDF → Accept terms → Pay → Auto-download')">See Full Flow</button>
   </div>
-  
-  <footer>
-    <p>GhamTech S.R.L. | CUI: 50686976 | Bacău, România</p>
-    <p>Cloudflare Worker ID: diacriticefix</p>
-  </footer>
+
+  <!-- Popups -->
+  <div class="popup" id="termsPopup">
+    <div class="popup-content">
+      <h2>Termeni și condiții</h2>
+      <p>Serviciul este oferit de GhamTech S.R.L. (CUI: 50686976)</p>
+      <p>Fișierul tău este șters automat în 60 de minute.</p>
+      <div class="popup-buttons">
+        <button class="btn-disagree" id="disagreeBtn">Nu sunt de acord</button>
+        <button class="btn-agree" id="agreeBtn">Consimtământ</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="popup" id="privacyPopup">
+    <div class="popup-content">
+      <h2>Politica de confidențialitate</h2>
+      <p>Nu stocăm textul documentului. Fișierul este șters în 60 de minute.</p>
+      <div class="popup-buttons">
+        <button class="btn-agree" id="privacyAgreeBtn">Am înțeles</button>
+      </div>
+    </div>
+  </div>
 
   <script>
-    // Test API button
-    document.querySelector('button[onclick*="test-api"]').onclick = async (e) => {
+    // DOM elements
+    const pdfUpload = document.getElementById('pdfUpload');
+    const browseBtn = document.getElementById('browseBtn');
+    const repairBtn = document.getElementById('repairBtn');
+    const dropArea = document.getElementById('dropArea');
+    const termsPopup = document.getElementById('termsPopup');
+    const privacyPopup = document.getElementById('privacyPopup');
+    const paymentContainer = document.getElementById('paymentContainer');
+    const payButton = document.getElementById('payButton');
+    const filePreview = document.getElementById('filePreview');
+    const uploadInstructions = document.getElementById('uploadInstructions');
+    const fileName = document.getElementById('fileName');
+    const fileSize = document.getElementById('fileSize');
+    const uploadStatus = document.getElementById('uploadStatus');
+    const statusFileName = document.getElementById('statusFileName');
+    let uploadedFile = null;
+    let processingFileId = null;
+
+    // Event listeners
+    browseBtn.addEventListener('click', () => pdfUpload.click());
+    pdfUpload.addEventListener('change', handleFileSelect);
+    repairBtn.addEventListener('click', showTerms);
+    dropArea.addEventListener('dragover', e => { e.preventDefault(); dropArea.classList.add('drag-over'); });
+    dropArea.addEventListener('dragleave', e => { e.preventDefault(); dropArea.classList.remove('drag-over'); });
+    dropArea.addEventListener('drop', handleDrop);
+    termsPopup.addEventListener('click', e => { if (e.target === termsPopup) termsPopup.classList.remove('active'); });
+    privacyPopup.addEventListener('click', e => { if (e.target === privacyPopup) privacyPopup.classList.remove('active'); });
+    
+    document.getElementById('agreeBtn').addEventListener('click', () => {
+      termsPopup.classList.remove('active');
+      privacyPopup.classList.add('active');
+    });
+    
+    document.getElementById('disagreeBtn').addEventListener('click', () => {
+      termsPopup.classList.remove('active');
+      alert('Ne pare rău, procesul nu poate continua.');
+    });
+    
+    document.getElementById('privacyAgreeBtn').addEventListener('click', () => {
+      privacyPopup.classList.remove('active');
+      startProcessing();
+    });
+    
+    payButton.addEventListener('click', () => {
+      if (processingFileId) {
+        window.location.href = `/download.html?file_id=${processingFileId}`;
+      }
+    });
+
+    // File handling
+    function handleFileSelect(e) {
+      const file = e.target.files[0];
+      if (file?.type === 'application/pdf') handleFileUpload(file);
+      else alert('Vă rugăm să încărcați un PDF valid!');
+    }
+    
+    function handleDrop(e) {
       e.preventDefault();
-      const res = await fetch('/.netlify/functions/test-api', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ test: 'hello' })
-      });
-      const data = await res.json();
-      alert('API Test Result:\\n' + JSON.stringify(data, null, 2));
-    };
+      dropArea.classList.remove('drag-over');
+      const file = e.dataTransfer.files[0];
+      if (file?.type === 'application/pdf') handleFileUpload(file);
+      else alert('Vă rugăm să încărcați un PDF valid!');
+    }
+    
+    function handleFileUpload(file) {
+      uploadedFile = file;
+      fileName.textContent = file.name;
+      fileSize.textContent = formatFileSize(file.size);
+      filePreview.classList.remove('hidden');
+      uploadInstructions.classList.add('hidden');
+      statusFileName.textContent = file.name;
+      uploadStatus.classList.remove('hidden');
+      repairBtn.disabled = false;
+      repairBtn.textContent = 'Repară PDF-ul acum';
+      dropArea.classList.add('file-uploaded');
+    }
+    
+    function formatFileSize(bytes) {
+      const sizes = ['Bytes', 'KB', 'MB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(1024));
+      return parseFloat((bytes / Math.pow(1024, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+    
+    function showTerms(e) {
+      e.preventDefault();
+      if (!uploadedFile) return alert('Încarcă un fișier PDF!');
+      termsPopup.classList.add('active');
+    }
+    
+    // MAIN PROCESSING FUNCTION
+    async function startProcessing() {
+      repairBtn.disabled = true;
+      repairBtn.textContent = 'Se procesează...';
+      
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const base64File = e.target.result.split(',')[1];
+        
+        try {
+          // Send to Cloudflare Worker API
+          const response = await fetch('/process-and-pay', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              fileData: base64File,
+              fileName: uploadedFile.name
+            })
+          });
+          
+          const result = await response.json();
+          
+          if (result.success) {
+            processingFileId = result.fileId;
+            // Show payment button
+            document.querySelector('.upload-section').style.display = 'none';
+            paymentContainer.classList.remove('hidden');
+          } else {
+            throw new Error(result.error || 'Eroare procesare');
+          }
+        } catch (error) {
+          alert('Eroare: ' + error.message + '\n\nVă rugăm încercați din nou.');
+          repairBtn.disabled = false;
+          repairBtn.textContent = 'Repară PDF-ul acum';
+        }
+      };
+      
+      reader.readAsDataURL(uploadedFile);
+    }
   </script>
+  
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; background: #f8f9fa; color: #333; line-height: 1.6; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 0 20px; }
+    header { background: #e91e63; color: white; padding: 15px 0; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    .header-content { display: flex; justify-content: space-between; align-items: center; }
+    .logo-img { height: 40px; margin-right: 10px; }
+    nav ul { display: flex; list-style: none; }
+    nav ul li { margin-left: 20px; }
+    nav ul li a { color: white; text-decoration: none; font-weight: 500; }
+    .hero { background: linear-gradient(135deg, #1a237e 0%, #0d47a1 100%); color: white; padding: 60px 0; text-align: center; }
+    .upload-section { background: white; border-radius: 10px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); padding: 40px; text-align: center; margin: 30px 0; }
+    .upload-area { border: 2px dashed #e91e63; border-radius: 10px; padding: 40px 20px; margin: 20px 0; min-height: 200px; cursor: pointer; }
+    .file-preview { display: flex; flex-direction: column; align-items: center; padding: 20px; }
+    .file-icon { font-size: 48px; margin-bottom: 10px; color: #e91e63; }
+    .file-name { font-weight: bold; font-size: 1.2rem; color: #1a237e; margin-bottom: 5px; }
+    .file-size { color: #666; font-size: 0.9rem; }
+    .upload-status { margin-top: 15px; padding: 10px 15px; background: #e8f5e9; color: #2e7d32; border-radius: 5px; border-left: 4px solid #4CAF50; text-align: left; font-weight: 500; }
+    .btn { background: #e91e63; color: white; border: none; padding: 12px 30px; font-size: 1.1rem; border-radius: 5px; cursor: pointer; font-weight: 600; }
+    .btn:hover { background: #d81b60; }
+    .btn:disabled { background: #bdbdbd; cursor: not-allowed; }
+    .payment-container { background: white; border-radius: 10px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); padding: 30px; text-align: center; margin: 30px 0; border: 2px solid #4CAF50; display: none; }
+    .payment-container.hidden { display: none; }
+    .payment-container:not(.hidden) { display: block; }
+    .popup { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1000; opacity: 0; visibility: hidden; transition: all 0.3s; }
+    .popup.active { opacity: 1; visibility: visible; }
+    .popup-content { background: white; border-radius: 10px; width: 90%; max-width: 500px; padding: 30px; position: relative; }
+    .popup-buttons { display: flex; justify-content: space-between; margin-top: 25px; }
+    .popup button { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-weight: 600; flex: 1; margin: 0 5px; }
+    .btn-agree { background: #4CAF50; color: white; }
+    .btn-disagree { background: #f44336; color: white; }
+    .hidden { display: none; }
+    .drag-over { background-color: #e3f2fd; border-color: #2196F3; }
+    .file-uploaded { border-color: #4CAF50; background-color: #e8f5e9; }
+    .small-text { color: #666; font-size: 0.9rem; margin-top: 10px; }
+  </style>
 </body>
 </html>
