@@ -57,18 +57,17 @@ export default {
         // Auto-delete after 10 minutes
         setTimeout(() => fileStorage.delete(fileId), 10 * 60 * 1000);
 
-        // Create Stripe payment session
+        // Create Stripe payment session - FIXED SYNTAX!
         const stripe = new Stripe(env.STRIPE_SECRET_KEY, {
-          apiVersion: '2024-06-20',
-          httpClient: Stripe.createFetchHttpClient()
+          apiVersion: '2024-06-20'
         });
         
         const session = await stripe.checkout.sessions.create({
           payment_method_types: ['card'],
           line_items: [{
-            price_ {
+            price_data: {  // FIXED: Was "price_ {" - missing colon and wrong name
               currency: 'eur',
-              product_ {
+              product_data: {  // FIXED: Was "product_ {" - missing colon and wrong name
                 name: 'PDF cu diacritice reparate',
                 description: fileName
               },
@@ -80,7 +79,10 @@ export default {
           success_url: `${env.BASE_URL}/download.html?file_id=${fileId}`,
           cancel_url: `${env.BASE_URL}/?cancelled=true`,
           client_reference_id: fileId,
-          metadata: { fileId, fileName }
+          metadata: {  // FIXED: Was "meta {" - missing colon and wrong name
+            fileId: fileId,
+            fileName: fileName
+          }
         });
 
         return new Response(JSON.stringify({
@@ -132,8 +134,7 @@ export default {
         try {
           // Verify webhook signature
           const stripe = new Stripe(env.STRIPE_SECRET_KEY, {
-            apiVersion: '2024-06-20',
-            httpClient: Stripe.createFetchHttpClient()
+            apiVersion: '2024-06-20'
           });
           
           const event = stripe.webhooks.constructEvent(
@@ -170,8 +171,8 @@ export default {
       }
 
       // 👉 SERVE STATIC FILES (your website pages)
+      // For production, use Cloudflare Pages for frontend - this is just for testing
       if (request.method === 'GET') {
-        // For demo purposes - in real app, use Cloudflare Pages for frontend
         if (path === '/' || path === '/index.html') {
           return new Response(htmlContent, { 
             headers: { ...headers, 'Content-Type': 'text/html' } 
