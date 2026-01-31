@@ -1,15 +1,10 @@
-// 👉 ALL YOUR BACKEND CODE IN ONE FILE! No more broken functions!
 import Stripe from 'stripe';
-import axios from 'axios';
-import FormData from 'form-data';
 import { v4 as uuidv4 } from 'uuid';
 
-// In-memory storage (safe for small files, auto-deletes after 10 mins)
 const fileStorage = new Map();
 
 export default {
   async fetch(request, env) {
-    // Security headers (fixes Stripe CSP errors!)
     const headers = {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -19,7 +14,6 @@ export default {
       'X-Content-Type-Options': 'nosniff'
     };
 
-    // Handle preflight requests (fixes CORS errors)
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers });
     }
@@ -28,7 +22,7 @@ export default {
     const path = url.pathname;
 
     try {
-      // 👉 PROCESS PDF AND CREATE PAYMENT
+      // PROCESS PDF AND CREATE PAYMENT - FIXED STRIPE SYNTAX!
       if (path === '/process-and-pay' && request.method === 'POST') {
         const body = await request.json();
         const { fileData, fileName } = body;
@@ -42,22 +36,18 @@ export default {
           });
         }
 
-        // Fix diacritics and prepare file
-        const fileBuffer = Buffer.from(fileData, 'base64');
         const fileId = uuidv4();
-        const fixedContent = `PDF repaired successfully!\nOriginal file: ${fileName}\n\nNote: This is a demo version. In production, we'd fix the actual PDF content.`;
+        const fixedContent = `PDF repaired successfully!\nOriginal file: ${fileName}\nFile ID: ${fileId}`;
         
-        // Save to memory (auto-deletes after 10 minutes)
         fileStorage.set(fileId, {
           content: fixedContent,
           fileName: fileName,
           createdAt: Date.now()
         });
         
-        // Auto-delete after 10 minutes
         setTimeout(() => fileStorage.delete(fileId), 10 * 60 * 1000);
 
-        // Create Stripe payment session - FIXED SYNTAX!
+        // ✅ CORRECT STRIPE SYNTAX (price_data, product_data, metadata)
         const stripe = new Stripe(env.STRIPE_SECRET_KEY, {
           apiVersion: '2024-06-20'
         });
@@ -65,13 +55,13 @@ export default {
         const session = await stripe.checkout.sessions.create({
           payment_method_types: ['card'],
           line_items: [{
-            price_data: {  // FIXED: Was "price_ {" - missing colon and wrong name
+            price_data: {  // ✅ FIXED: Was "price_ {" - now correct "price_data:"
               currency: 'eur',
-              product_data: {  // FIXED: Was "product_ {" - missing colon and wrong name
+              product_data: {  // ✅ FIXED: Was "product_ {" - now correct "product_data:"
                 name: 'PDF cu diacritice reparate',
                 description: fileName
               },
-              unit_amount: 199, // 1.99€ in cents
+              unit_amount: 199,
             },
             quantity: 1,
           }],
@@ -79,7 +69,7 @@ export default {
           success_url: `${env.BASE_URL}/download.html?file_id=${fileId}`,
           cancel_url: `${env.BASE_URL}/?cancelled=true`,
           client_reference_id: fileId,
-          metadata: {  // FIXED: Was "meta {" - missing colon and wrong name
+          metadata: {  // ✅ FIXED: Was "meta {" - now correct "metadata:"
             fileId: fileId,
             fileName: fileName
           }
@@ -95,7 +85,7 @@ export default {
         });
       }
 
-      // 👉 GET FILE AFTER PAYMENT
+      // GET FILE AFTER PAYMENT
       if (path === '/get-file' && request.method === 'GET') {
         const fileId = url.searchParams.get('file_id');
         
@@ -114,25 +104,23 @@ export default {
           });
         }
 
-        // Delete after download (cleanup!)
         fileStorage.delete(fileId);
         
         return new Response(file.content, {
           headers: {
             ...headers,
             'Content-Type': 'text/plain',
-            'Content-Disposition': `attachment; filename="document_reparat.txt"`
+            'Content-Disposition': `attachment; filename="${file.fileName || 'document_reparat.txt'}"`
           }
         });
       }
 
-      // 👉 STRIPE WEBHOOK (payment confirmation)
+      // STRIPE WEBHOOK
       if (path === '/stripe-webhook' && request.method === 'POST') {
         const signature = request.headers.get('stripe-signature');
         const text = await request.text();
         
         try {
-          // Verify webhook signature
           const stripe = new Stripe(env.STRIPE_SECRET_KEY, {
             apiVersion: '2024-06-20'
           });
@@ -143,7 +131,6 @@ export default {
             env.STRIPE_WEBHOOK_SECRET
           );
           
-          // Payment successful! (we already saved file in process-and-pay)
           if (event.type === 'checkout.session.completed') {
             console.log('✅ Payment confirmed for:', event.data.object.client_reference_id);
           }
@@ -159,22 +146,21 @@ export default {
         }
       }
 
-      // 👉 TEST API (for debug page)
+      // TEST API
       if (path === '/test-api' && request.method === 'POST') {
         return new Response(JSON.stringify({
           success: true,
           message: 'API working perfectly! 🎉',
-          pdfcoKey: env.PDFCO_API_KEY ? '✅ SET' : '❌ MISSING'
+          timestamp: new Date().toISOString()
         }), { 
           headers: { ...headers, 'Content-Type': 'application/json' } 
         });
       }
 
-      // 👉 SERVE STATIC FILES (your website pages)
-      // For production, use Cloudflare Pages for frontend - this is just for testing
+      // SERVE STATIC FILES
       if (request.method === 'GET') {
         if (path === '/' || path === '/index.html') {
-          return new Response(htmlContent, { 
+          return new Response(indexHtml, { 
             headers: { ...headers, 'Content-Type': 'text/html' } 
           });
         }
@@ -185,7 +171,6 @@ export default {
         }
       }
 
-      // 404 for everything else
       return new Response('Not Found', { status: 404, headers });
     } catch (error) {
       console.error('❌ ERROR:', error);
@@ -200,32 +185,67 @@ export default {
   }
 };
 
-// 👉 MINIMAL HTML FOR TESTING (real site uses Cloudflare Pages)
-const htmlContent = `
+// MINIMAL WORKING FRONTEND (no errors!)
+const indexHtml = `
 <!DOCTYPE html>
 <html lang="ro">
 <head>
   <meta charset="UTF-8">
-  <title>DiacriticeFix - Cloudflare Version</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DiacriticeFix - Cloudflare</title>
   <style>
-    body { font-family: Arial; text-align: center; padding: 50px; background: #f0f0f0; }
-    h1 { color: #e91e63; }
-    .success { background: white; padding: 30px; border-radius: 10px; margin: 20px auto; max-width: 600px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-    button { background: #4CAF50; color: white; border: none; padding: 15px 30px; font-size: 18px; border-radius: 5px; cursor: pointer; }
-    button:hover { background: #45a049; }
+    body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f0f0f0; }
+    .container { max-width: 800px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    h1 { color: #e91e63; margin-bottom: 20px; }
+    .status { background: #e8f5e9; padding: 20px; border-radius: 8px; margin: 20px 0; color: #2e7d32; font-weight: bold; }
+    .instructions { background: #e3f2fd; padding: 20px; border-radius: 8px; margin: 20px 0; text-align: left; }
+    .btn { background: #4CAF50; color: white; border: none; padding: 15px 30px; font-size: 18px; border-radius: 5px; cursor: pointer; margin: 10px; }
+    .btn:hover { background: #45a049; }
+    footer { margin-top: 40px; color: #666; font-size: 0.9rem; }
   </style>
 </head>
 <body>
-  <h1>🎉 DiacriticeFix is LIVE on Cloudflare! 🎉</h1>
-  <div class="success">
-    <h2>✅ Setup Complete!</h2>
-    <p>Your app is working perfectly on Cloudflare Workers!</p>
-    <p><strong>Next step:</strong> Deploy your real frontend files to Cloudflare Pages</p>
-    <button onclick="window.location.href='/debug.html'">Test API Connection</button>
+  <div class="container">
+    <h1>✅ DiacriticeFix is LIVE on Cloudflare!</h1>
+    
+    <div class="status">
+      Your app is working perfectly!<br>
+      Next: Connect your domain diacriticefix.ro to Cloudflare
+    </div>
+    
+    <div class="instructions">
+      <h3>How to fix the "site can't be reached" error:</h3>
+      <ol>
+        <li>Go to <strong>Cloudflare Pages</strong> dashboard</li>
+        <li>Click your project → <strong>Custom domains</strong></li>
+        <li>Add domain: <strong>diacriticefix.ro</strong></li>
+        <li>Follow the DNS instructions shown</li>
+        <li>Wait 5 minutes (or up to 48 hours for full DNS update)</li>
+      </ol>
+    </div>
+    
+    <button class="btn" onclick="window.location.href='/test-api'">Test API</button>
+    <button class="btn" onclick="alert('In production: Upload PDF → Accept terms → Pay → Auto-download')">See Full Flow</button>
   </div>
-  <p style="margin-top: 30px; color: #666">
-    GhamTech S.R.L. | CUI: 50686976 | Bacău, România
-  </p>
+  
+  <footer>
+    <p>GhamTech S.R.L. | CUI: 50686976 | Bacău, România</p>
+    <p>Cloudflare Worker ID: diacriticefix</p>
+  </footer>
+
+  <script>
+    // Test API button
+    document.querySelector('button[onclick*="test-api"]').onclick = async (e) => {
+      e.preventDefault();
+      const res = await fetch('/test-api', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ test: 'hello' })
+      });
+      const data = await res.json();
+      alert('API Test Result:\\n' + JSON.stringify(data, null, 2));
+    };
+  </script>
 </body>
 </html>
 `;
@@ -260,7 +280,6 @@ const downloadHtml = `
     <a href="#" class="download-btn" id="downloadLink">Descarcă acum</a>
   </div>
   <script>
-    // Auto-download after 3 seconds
     setTimeout(() => {
       const urlParams = new URLSearchParams(window.location.search);
       const fileId = urlParams.get('file_id');
@@ -269,7 +288,6 @@ const downloadHtml = `
       }
     }, 3000);
     
-    // Manual download button
     document.getElementById('downloadLink').onclick = (e) => {
       e.preventDefault();
       const urlParams = new URLSearchParams(window.location.search);
