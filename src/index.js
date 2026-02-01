@@ -1,12 +1,13 @@
 // This is our main backend code that runs on Cloudflare
 // It handles PDF processing, payments, and file delivery
 
+// Import required modules
 import Stripe from 'stripe';
 import axios from 'axios';
 import FormData from 'form-data';
 import { v4 as uuidv4 } from 'uuid';
 
-// Initialize Stripe with the secret key
+// Initialize Stripe with the secret key from environment
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: '2024-06-20'
 });
@@ -17,6 +18,7 @@ const fileStorage = new Map();
 // PDF.co API service class
 class PdfService {
     constructor() {
+        // Use environment variable or fallback key
         this.apiKey = process.env.PDFCO_API_KEY || 'ghamtech@ghamtech.com_ZBZ78mtRWz6W5y5ltoi29Q4W1387h8PGiKtRmRCiY2hSGAN0TjZGVUyl1mqSp5F8';
         this.baseUrl = 'https://api.pdf.co/v1';
         this.headers = {
@@ -26,6 +28,7 @@ class PdfService {
     
     // Fix Romanian diacritics in text
     fixDiacritics(text) {
+        // Define the mapping of broken diacritics to correct ones
         const replacements = {
             'Ã£Æ\'Â¢': 'â',
             'Ã£Æ\'â€ž': 'ă',
@@ -53,9 +56,14 @@ class PdfService {
             'Å¢': 'Ț'
         };
         
+        // Start with the original text
         let fixedText = text;
+        
+        // Replace each broken diacritic with the correct one
         Object.entries(replacements).forEach(([bad, good]) => {
+            // Create a regular expression to find all instances of the broken diacritic
             const regex = new RegExp(bad.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+            // Replace all occurrences
             fixedText = fixedText.replace(regex, good);
         });
         
@@ -65,34 +73,42 @@ class PdfService {
     // Upload file to PDF.co and get URL
     async uploadFile(fileBuffer, fileName = 'document.pdf') {
         try {
+            console.log('Uploading file to PDF.co...');
+            
+            // Create form data for file upload
             const form = new FormData();
             form.append('file', fileBuffer, {
                 filename: fileName,
                 contentType: 'application/pdf'
             });
             
+            // Get headers for form data
             const formHeaders = form.getHeaders();
-            const headers = {
-                ...this.headers,
-                ...formHeaders
-            };
             
+            // Make API request to upload file
             const response = await axios.post(
                 `${this.baseUrl}/file/upload`,
                 form,
                 {
-                    headers: headers,
+                    headers: {
+                        ...this.headers,
+                        ...formHeaders
+                    },
                     maxContentLength: Infinity,
                     maxBodyLength: Infinity,
                     timeout: 60000
                 }
             );
             
+            // Check if the response indicates an error
             if (response.data.error) {
                 throw new Error(response.data.message || 'Error uploading file to PDF.co');
             }
             
-            return response.data.url;
+            // Clean and return the URL
+            const fileUrl = response.data.url.trim();
+            console.log('File uploaded successfully. URL:', fileUrl);
+            return fileUrl;
         } catch (error) {
             console.error('Error uploading file:', error.response?.data || error.message);
             throw error;
@@ -102,6 +118,9 @@ class PdfService {
     // Extract text from PDF using URL
     async extractTextFromUrl(fileUrl) {
         try {
+            console.log('Extracting text from PDF at:', fileUrl);
+            
+            // Make API request to extract text
             const response = await axios.post(
                 `${this.baseUrl}/pdf/convert/to/text`,
                 {
@@ -114,10 +133,12 @@ class PdfService {
                 }
             );
             
+            // Check if the response indicates an error
             if (response.data.error) {
                 throw new Error(response.data.message || 'Error extracting text from PDF');
             }
             
+            console.log('Text extraction completed');
             return response.data.text;
         } catch (error) {
             console.error('Error extracting text:', error.response?.data || error.message);
@@ -130,23 +151,23 @@ class PdfService {
         try {
             console.log('Starting PDF processing for file:', fileName);
             
-            // Upload file to get URL
+            // Step 1: Upload file to get URL
             const fileUrl = await this.uploadFile(fileBuffer, fileName);
             console.log('File uploaded successfully, URL:', fileUrl);
             
-            // Extract text from PDF
+            // Step 2: Extract text from PDF
             const originalText = await this.extractTextFromUrl(fileUrl);
             console.log('Text extracted successfully');
             
-            // Fix diacritics
+            // Step 3: Fix diacritics
             const fixedText = this.fixDiacritics(originalText);
             console.log('Diacritics fixed. Comparison:');
             console.log('Original text length:', originalText.length);
             console.log('Fixed text length:', fixedText.length);
             
-            // Create fixed content
+            // Step 4: Create the fixed content
             const fileId = uuidv4();
-            const fixedContent = `PDF reparat cu succes!
+            const fixedContent = `PDF repaired successfully!
 Original file: ${fileName}
 
 Original text (first 500 chars):
@@ -171,7 +192,7 @@ ${fixedText.substring(0, 500)}
                 status: error.response?.status
             });
             
-            // Return a fallback result
+            // Return a fallback result so the user can still proceed
             return {
                 fileId: uuidv4(),
                 processedPdf: Buffer.from('Error processing PDF. Please try again with a different file or contact support.'),
@@ -182,228 +203,244 @@ ${fixedText.substring(0, 500)}
     }
 }
 
+// Main Cloudflare Worker
 export default {
-  async fetch(request, env) {
-    // Security headers
-    const headers = {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Content-Type',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Content-Security-Policy': "default-src 'self' https://js.stripe.com https://checkout.stripe.com https://buy.stripe.com https://*.stripe.com https://api.pdf.co; script-src 'self' 'unsafe-inline' https://js.stripe.com https://checkout.stripe.com https://buy.stripe.com https://*.stripe.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' https://*.stripe.com https://diacriticefix.pages.dev https://pdf-temp-files.s3.us-west-2.amazonaws.com; connect-src 'self' https://api.pdf.co https://api.stripe.com https://diacriticefix.pages.dev https://*.stripe.com; frame-src 'self' https://js.stripe.com https://checkout.stripe.com https://buy.stripe.com https://*.stripe.com; font-src 'self' https://fonts.gstatic.com;",
-      'X-Frame-Options': 'SAMEORIGIN',
-      'X-Content-Type-Options': 'nosniff'
-    };
-
-    // Handle preflight requests
-    if (request.method === 'OPTIONS') {
-      return new Response(null, { headers });
-    }
-
-    const url = new URL(request.url);
-    const path = url.pathname;
-
-    try {
-      // PROCESS PDF AND CREATE PAYMENT SESSION
-      if (path === '/process-and-pay' && request.method === 'POST') {
-        const body = await request.json();
-        const { fileData, fileName } = body;
-        
-        if (!fileData || !fileName) {
-          return new Response(JSON.stringify({ 
-            success: false,
-            error: 'Missing file or filename' 
-          }), { 
-            status: 400, 
-            headers: { ...headers, 'Content-Type': 'application/json' } 
-          });
-        }
-
+    async fetch(request, env) {
         try {
-          // Process PDF file
-          const pdfService = new PdfService();
-          const fileBuffer = Buffer.from(fileData, 'base64');
-          
-          const processedFile = await pdfService.processPdfFile(fileBuffer, fileName);
-          
-          // Store file temporarily in memory
-          fileStorage.set(processedFile.fileId, {
-            content: processedFile.processedPdf,
-            fileName: processedFile.fileName,
-            createdAt: Date.now()
-          });
-          
-          // Auto-cleanup after 10 minutes
-          setTimeout(() => fileStorage.delete(processedFile.fileId), 10 * 60 * 1000);
+            // Security headers to prevent issues with Stripe and other services
+            const headers = {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Headers': 'Content-Type',
+                'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+                'Content-Security-Policy': "default-src 'self' https://js.stripe.com https://checkout.stripe.com https://buy.stripe.com https://*.stripe.com https://api.pdf.co; script-src 'self' 'unsafe-inline' https://js.stripe.com https://checkout.stripe.com https://buy.stripe.com https://*.stripe.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' https://*.stripe.com https://diacriticefix.pages.dev https://pdf-temp-files.s3.us-west-2.amazonaws.com; connect-src 'self' https://api.pdf.co https://api.stripe.com https://diacriticefix.pages.dev https://*.stripe.com; frame-src 'self' https://js.stripe.com https://checkout.stripe.com https://buy.stripe.com https://*.stripe.com; font-src 'self' https://fonts.gstatic.com;",
+                'X-Frame-Options': 'SAMEORIGIN',
+                'X-Content-Type-Options': 'nosniff'
+            };
 
-          // Create Stripe payment session
-          const session = await stripe.checkout.sessions.create({
-            payment_method_types: ['card'],
-            line_items: [{
-              price_data:{
-                currency: 'eur',
-                product_data: {
-                  name: 'PDF cu diacritice reparate',
-                  description: fileName
-                },
-                unit_amount: 199, // 1.99€ in cents
-              },
-              quantity: 1,
-            }],
-            mode: 'payment',
-            success_url: `${env.BASE_URL}/download.html?file_id=${processedFile.fileId}&session_id={CHECKOUT_SESSION_ID}`,
-            cancel_url: `${env.BASE_URL}/?cancelled=true`,
-            client_reference_id: processedFile.fileId,
-            metadata: {
-              fileId: processedFile.fileId,
-              fileName: fileName
+            // Handle preflight requests (browser checks)
+            if (request.method === 'OPTIONS') {
+                return new Response(null, { headers });
             }
-          });
 
-          return new Response(JSON.stringify({
-            success: true,
-            fileId: processedFile.fileId,
-            sessionId: session.id,
-            paymentUrl: session.url
-          }), { 
-            headers: { ...headers, 'Content-Type': 'application/json' } 
-          });
-          
-        } catch (processingError) {
-          console.error('Error during file processing:', processingError);
-          return new Response(JSON.stringify({
-            success: true, // Allow the process to continue even if processing fails
-            fileId: uuidv4(),
-            sessionId: 'error_session_' + Date.now(),
-            paymentUrl: `${env.BASE_URL}/download.html?error=processing_failed&message=${encodeURIComponent(processingError.message)}`,
-            error: processingError.message,
-            isFallback: true
-          }), { 
-            headers: { ...headers, 'Content-Type': 'application/json' } 
-          });
-        }
-      }
+            const url = new URL(request.url);
+            const path = url.pathname;
 
-      // VERIFY PAYMENT COMPLETION
-      if (path === '/verify-payment' && request.method === 'POST') {
-        const body = await request.json();
-        const { sessionId } = body;
-        
-        if (!sessionId) {
-          return new Response(JSON.stringify({ error: 'Session ID is required' }), {
-            status: 400,
-            headers: { ...headers, 'Content-Type': 'application/json' }
-          });
-        }
+            // PROCESS PDF AND CREATE PAYMENT SESSION
+            if (path === '/process-and-pay' && request.method === 'POST') {
+                const body = await request.json();
+                const { fileData, fileName } = body;
+                
+                if (!fileData || !fileName) {
+                    return new Response(JSON.stringify({ 
+                        success: false,
+                        error: 'Missing file or filename' 
+                    }), { 
+                        status: 400, 
+                        headers: { ...headers, 'Content-Type': 'application/json' } 
+                    });
+                }
 
-        try {
-          const session = await stripe.checkout.sessions.retrieve(sessionId);
-          
-          if (session.payment_status !== 'paid') {
-            return new Response(JSON.stringify({ error: 'Payment not completed' }), {
-              status: 400,
-              headers: { ...headers, 'Content-Type': 'application/json' }
+                try {
+                    // Process PDF file
+                    const pdfService = new PdfService();
+                    const fileBuffer = Buffer.from(fileData, 'base64');
+                    
+                    console.log('File buffer created, size:', fileBuffer.length);
+                    
+                    const processedFile = await pdfService.processPdfFile(fileBuffer, fileName);
+                    console.log('PDF processing completed', processedFile);
+                    
+                    // Save file temporarily in memory
+                    fileStorage.set(processedFile.fileId, {
+                        content: processedFile.processedPdf,
+                        fileName: processedFile.fileName,
+                        createdAt: Date.now()
+                    });
+                    
+                    // Auto-cleanup after 10 minutes
+                    setTimeout(() => fileStorage.delete(processedFile.fileId), 10 * 60 * 1000);
+
+                    // Create Stripe payment session
+                    const session = await stripe.checkout.sessions.create({
+                        payment_method_types: ['card'],
+                        line_items: [{
+                            price_data: {
+                                currency: 'eur',
+                                product_data: {
+                                    name: 'PDF cu diacritice reparate',
+                                    description: fileName
+                                },
+                                unit_amount: 199, // 1.99€ in cents
+                            },
+                            quantity: 1,
+                        }],
+                        mode: 'payment',
+                        success_url: `${env.BASE_URL || 'https://diacriticefix.pages.dev'}/download.html?file_id=${processedFile.fileId}&session_id={CHECKOUT_SESSION_ID}`,
+                        cancel_url: `${env.BASE_URL || 'https://diacriticefix.pages.dev'}/?cancelled=true`,
+                        client_reference_id: processedFile.fileId,
+                        metadata: {
+                            fileId: processedFile.fileId,
+                            fileName: fileName
+                        }
+                    });
+
+                    console.log('Stripe session created successfully');
+                    
+                    return new Response(JSON.stringify({
+                        success: true,
+                        fileId: processedFile.fileId,
+                        sessionId: session.id,
+                        paymentUrl: session.url
+                    }), { 
+                        headers: { ...headers, 'Content-Type': 'application/json' } 
+                    });
+                    
+                } catch (processingError) {
+                    console.error('Error during file processing:', processingError);
+                    // Still return success so the frontend can proceed with payment
+                    return new Response(JSON.stringify({
+                        success: true, // Allow the process to continue
+                        fileId: uuidv4(),
+                        sessionId: 'error_session_' + Date.now(),
+                        paymentUrl: `${env.BASE_URL || 'https://diacriticefix.pages.dev'}/download.html?error=processing_failed&message=${encodeURIComponent(processingError.message)}`,
+                        error: processingError.message,
+                        isFallback: true
+                    }), { 
+                        headers: { ...headers, 'Content-Type': 'application/json' } 
+                    });
+                }
+            }
+
+            // VERIFY PAYMENT COMPLETION
+            if (path === '/verify-payment' && request.method === 'POST') {
+                const body = await request.json();
+                const { sessionId } = body;
+                
+                if (!sessionId) {
+                    return new Response(JSON.stringify({ error: 'Session ID is required' }), {
+                        status: 400,
+                        headers: { ...headers, 'Content-Type': 'application/json' }
+                    });
+                }
+
+                try {
+                    // Retrieve the session from Stripe
+                    const session = await stripe.checkout.sessions.retrieve(sessionId);
+                    
+                    if (session.payment_status !== 'paid') {
+                        return new Response(JSON.stringify({ error: 'Payment not completed' }), {
+                            status: 400,
+                            headers: { ...headers, 'Content-Type': 'application/json' }
+                        });
+                    }
+                    
+                    // Get file ID from client reference ID
+                    const fileId = session.client_reference_id;
+                    
+                    if (!fileId) {
+                        return new Response(JSON.stringify({ error: 'File ID not found in session' }), {
+                            status: 400,
+                            headers: { ...headers, 'Content-Type': 'application/json' }
+                        });
+                    }
+                    
+                    console.log('Payment verified successfully for file:', fileId);
+                    
+                    return new Response(JSON.stringify({ 
+                        success: true, 
+                        fileId: fileId,
+                        fileName: session.metadata?.fileName || 'document_reparat.txt'
+                    }), { 
+                        headers: { ...headers, 'Content-Type': 'application/json' } 
+                    });
+                    
+                } catch (stripeError) {
+                    console.error('Stripe error:', stripeError);
+                    return new Response(JSON.stringify({
+                        error: 'Failed to verify payment',
+                        details: stripeError.message
+                    }), {
+                        status: 500,
+                        headers: { ...headers, 'Content-Type': 'application/json' }
+                    });
+                }
+            }
+
+            // GET PROCESSED FILE AFTER PAYMENT
+            if (path === '/get-file' && request.method === 'GET') {
+                const fileId = url.searchParams.get('file_id');
+                
+                if (!fileId) {
+                    return new Response(JSON.stringify({ error: 'File ID is required' }), {
+                        status: 400,
+                        headers: { ...headers, 'Content-Type': 'application/json' }
+                    });
+                }
+
+                const file = fileStorage.get(fileId);
+                if (!file) {
+                    return new Response(JSON.stringify({ error: 'File not found or has expired' }), {
+                        status: 404,
+                        headers: { ...headers, 'Content-Type': 'application/json' }
+                    });
+                }
+
+                // Delete file after retrieval (cleanup)
+                fileStorage.delete(fileId);
+                
+                return new Response(file.content, {
+                    headers: {
+                        ...headers,
+                        'Content-Type': 'application/pdf',
+                        'Content-Disposition': `attachment; filename="${file.fileName}"`
+                    }
+                });
+            }
+
+            // TEST API CONNECTION
+            if (path === '/test-api' && request.method === 'POST') {
+                return new Response(JSON.stringify({
+                    success: true,
+                    message: 'API working perfectly! 🎉',
+                    timestamp: new Date().toISOString(),
+                    pdfcoKey: env.PDFCO_API_KEY ? '✅ SET' : '❌ MISSING'
+                }), { 
+                    headers: { ...headers, 'Content-Type': 'application/json' } 
+                });
+            }
+
+            // SERVE STATIC PAGES (FRONTEND)
+            if (request.method === 'GET') {
+                if (path === '/' || path === '/index.html') {
+                    return new Response(indexHtml, { 
+                        headers: { ...headers, 'Content-Type': 'text/html' } 
+                    });
+                }
+                if (path === '/download.html') {
+                    return new Response(downloadHtml, { 
+                        headers: { ...headers, 'Content-Type': 'text/html' } 
+                    });
+                }
+            }
+
+            // 404 for everything else
+            return new Response('Not Found', { status: 404, headers });
+            
+        } catch (error) {
+            console.error('❌ ERROR:', error);
+            return new Response(JSON.stringify({ 
+                error: 'Server error', 
+                details: error.message 
+            }), { 
+                status: 500, 
+                headers: { 
+                    'Access-Control-Allow-Origin': '*', 
+                    'Access-Control-Allow-Headers': 'Content-Type', 
+                    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' 
+                } 
             });
-          }
-          
-          const fileId = session.client_reference_id;
-          
-          if (!fileId) {
-            return new Response(JSON.stringify({ error: 'File ID not found in session' }), {
-              status: 400,
-              headers: { ...headers, 'Content-Type': 'application/json' }
-            });
-          }
-          
-          return new Response(JSON.stringify({ 
-            success: true, 
-            fileId: fileId,
-            fileName: session.meta?.fileName || 'document_reparat.txt'
-          }), { 
-            headers: { ...headers, 'Content-Type': 'application/json' } 
-          });
-          
-        } catch (stripeError) {
-          console.error('Stripe error:', stripeError);
-          return new Response(JSON.stringify({
-            error: 'Failed to verify payment',
-            details: stripeError.message
-          }), {
-            status: 500,
-            headers: { ...headers, 'Content-Type': 'application/json' }
-          });
         }
-      }
-
-      // GET PROCESSED FILE
-      if (path === '/get-file' && request.method === 'GET') {
-        const fileId = url.searchParams.get('file_id');
-        
-        if (!fileId) {
-          return new Response(JSON.stringify({ error: 'File ID is required' }), {
-            status: 400,
-            headers: { ...headers, 'Content-Type': 'application/json' }
-          });
-        }
-
-        const file = fileStorage.get(fileId);
-        if (!file) {
-          return new Response(JSON.stringify({ error: 'File not found or has expired' }), {
-            status: 404,
-            headers: { ...headers, 'Content-Type': 'application/json' }
-          });
-        }
-
-        // Delete file after retrieval (cleanup)
-        fileStorage.delete(fileId);
-        
-        return new Response(file.content, {
-          headers: {
-            ...headers,
-            'Content-Type': 'application/pdf',
-            'Content-Disposition': `attachment; filename="${file.fileName}"`
-          }
-        });
-      }
-
-      // TEST API CONNECTION
-      if (path === '/test-api' && request.method === 'POST') {
-        return new Response(JSON.stringify({
-          success: true,
-          message: 'API working perfectly! 🎉',
-          timestamp: new Date().toISOString(),
-          pdfcoKey: env.PDFCO_API_KEY ? '✅ SET' : '❌ MISSING'
-        }), { 
-          headers: { ...headers, 'Content-Type': 'application/json' } 
-        });
-      }
-
-      // SERVE STATIC FILES (your frontend pages)
-      if (request.method === 'GET') {
-        if (path === '/' || path === '/index.html') {
-          return new Response(indexHtml, { 
-            headers: { ...headers, 'Content-Type': 'text/html' } 
-          });
-        }
-        if (path === '/download.html') {
-          return new Response(downloadHtml, { 
-            headers: { ...headers, 'Content-Type': 'text/html' } 
-          });
-        }
-      }
-
-      // 404 for everything else
-      return new Response('Not Found', { status: 404, headers });
-    } catch (error) {
-      console.error('❌ ERROR:', error);
-      return new Response(JSON.stringify({ 
-        error: 'Server error', 
-        details: error.message 
-      }), { 
-        status: 500, 
-        headers: { ...headers, 'Content-Type': 'application/json' } 
-      });
     }
-  }
 };
 
 // Minimal HTML for testing
