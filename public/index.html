@@ -57,6 +57,8 @@
       <div id="uploadStatus" class="upload-status hidden">
         <p>✅ Fișierul <span id="statusFileName">Document.pdf</span> a fost încărcat!</p>
       </div>
+      
+      <div id="errorContainer" class="error-container hidden"></div>
     </div>
 
     <div class="payment-container hidden" id="paymentContainer">
@@ -105,6 +107,7 @@
     const fileSize = document.getElementById('fileSize');
     const uploadStatus = document.getElementById('uploadStatus');
     const statusFileName = document.getElementById('statusFileName');
+    const errorContainer = document.getElementById('errorContainer');
     let uploadedFile = null;
     let processingFileId = null;
 
@@ -165,6 +168,7 @@
       repairBtn.disabled = false;
       repairBtn.textContent = 'Repară PDF-ul acum';
       dropArea.classList.add('file-uploaded');
+      errorContainer.classList.add('hidden');
     }
     
     function formatFileSize(bytes) {
@@ -179,38 +183,92 @@
       termsPopup.classList.add('active');
     }
     
-    // MAIN PROCESSING FUNCTION
+    // CRITICAL FIX: Handles non-JSON responses from Worker
     async function startProcessing() {
       repairBtn.disabled = true;
       repairBtn.textContent = 'Se procesează...';
+      errorContainer.classList.add('hidden');
       
       const reader = new FileReader();
       reader.onload = async (e) => {
         const base64File = e.target.result.split(',')[1];
         
         try {
-          // Send to Cloudflare Worker API
+          // Send to Cloudflare Worker API with timeout
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+          
           const response = await fetch('/process-and-pay', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               fileData: base64File,
               fileName: uploadedFile.name
-            })
+            }),
+            signal: controller.signal
           });
           
+          clearTimeout(timeoutId);
+          
+          // 🔑 CRITICAL FIX: Check response BEFORE parsing JSON
+          if (!response.ok) {
+            // Try to get error details from response
+            let errorMsg = `Eroare server: ${response.status} ${response.statusText}`;
+            
+            try {
+              // Try to parse JSON error
+              const errorData = await response.json();
+              errorMsg = errorData.error || errorData.message || errorMsg;
+            } catch (jsonError) {
+              // If not JSON, get text content
+              try {
+                const text = await response.text();
+                if (text) errorMsg = `Eroare: ${text.substring(0, 200)}`;
+              } catch (e) {
+                // Final fallback
+                errorMsg = `Eroare ${response.status}: Serverul nu a returnat un răspuns valid`;
+              }
+            }
+            
+            throw new Error(errorMsg);
+          }
+          
+          // Check content type is JSON
+          const contentType = response.headers.get('content-type');
+          if (!contentType || !contentType.includes('application/json')) {
+            const text = await response.text();
+            throw new Error(`Răspuns neașteptat de la server. Contactați suportul.`);
+          }
+          
+          // Now safely parse JSON
           const result = await response.json();
           
           if (result.success) {
             processingFileId = result.fileId;
-            // Show payment button
             document.querySelector('.upload-section').style.display = 'none';
             paymentContainer.classList.remove('hidden');
           } else {
-            throw new Error(result.error || 'Eroare procesare');
+            throw new Error(result.error || 'Eroare procesare fișier');
           }
         } catch (error) {
-          alert('Eroare: ' + error.message + '\n\nVă rugăm încercați din nou.');
+          console.error('Processing error:', error);
+          
+          // Show user-friendly error
+          let errorMsg = 'A apărut o eroare. Vă rugăm încercați din nou.';
+          
+          if (error.name === 'AbortError') {
+            errorMsg = 'Procesarea a depășit timpul limită (15 secunde). Încercați cu un fișier mai mic.';
+          } else if (error.message.includes('Failed to fetch')) {
+            errorMsg = 'Nu am putut contacta serverul. Verificați conexiunea la internet.';
+          } else {
+            errorMsg = error.message || errorMsg;
+          }
+          
+          // Show error in UI
+          errorContainer.textContent = `❌ ${errorMsg}`;
+          errorContainer.classList.remove('hidden');
+          
+          // Reset UI
           repairBtn.disabled = false;
           repairBtn.textContent = 'Repară PDF-ul acum';
         }
@@ -238,6 +296,17 @@
     .file-name { font-weight: bold; font-size: 1.2rem; color: #1a237e; margin-bottom: 5px; }
     .file-size { color: #666; font-size: 0.9rem; }
     .upload-status { margin-top: 15px; padding: 10px 15px; background: #e8f5e9; color: #2e7d32; border-radius: 5px; border-left: 4px solid #4CAF50; text-align: left; font-weight: 500; }
+    .error-container { 
+      margin-top: 15px; 
+      padding: 15px; 
+      background: #ffebee; 
+      color: #c62828; 
+      border-radius: 5px; 
+      border-left: 4px solid #f44336; 
+      text-align: left; 
+      font-weight: 500;
+      display: none;
+    }
     .btn { background: #e91e63; color: white; border: none; padding: 12px 30px; font-size: 1.1rem; border-radius: 5px; cursor: pointer; font-weight: 600; }
     .btn:hover { background: #d81b60; }
     .btn:disabled { background: #bdbdbd; cursor: not-allowed; }
