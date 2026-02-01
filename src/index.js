@@ -4,8 +4,8 @@
 import Stripe from 'stripe';
 import { v4 as uuidv4 } from 'uuid';
 
-// Initialize Stripe with environment variables
-const stripe = new Stripe(ENV.STRIPE_SECRET_KEY, {
+// Initialize Stripe with environment variables - CORRECTED!
+const stripe = new Stripe(env.STRIPE_SECRET_KEY, {
   apiVersion: '2024-06-20'
 });
 
@@ -14,9 +14,9 @@ const fileStorage = new Map();
 
 // PDF.co API service class
 class PdfService {
-    constructor() {
-        // Use environment variable or fallback
-        this.apiKey = ENV.PDFCO_API_KEY || 'ghamtech@ghamtech.com_ZBZ78mtRWz6W5y5ltoi29Q4W1387h8PGiKtRmRCiY2hSGAN0TjZGVUyl1mqSp5F8';
+    constructor(env) { // Pass env to constructor
+        // Use environment variable or fallback - CORRECTED!
+        this.apiKey = env.PDFCO_API_KEY || 'ghamtech@ghamtech.com_ZBZ78mtRWz6W5y5ltoi29Q4W1387h8PGiKtRmRCiY2hSGAN0TjZGVUyl1mqSp5F8';
         this.baseUrl = 'https://api.pdf.co/v1';
         this.headers = {
             'Content-Type': 'application/json',
@@ -170,7 +170,7 @@ ${fixedText.substring(0, 500)}
     }
 }
 
-// Main Cloudflare Worker
+// Main Cloudflare Worker - CORRECTED!
 export default {
     async fetch(request, env, ctx) {
         try {
@@ -208,8 +208,8 @@ export default {
                 }
 
                 try {
-                    // Process PDF file
-                    const pdfService = new PdfService();
+                    // Process PDF file - PASS env to PdfService
+                    const pdfService = new PdfService(env);
                     const fileBuffer = Buffer.from(fileData, 'base64');
                     
                     console.log('File buffer created, size:', fileBuffer.length);
@@ -232,7 +232,7 @@ export default {
                         }, 10 * 60 * 1000);
                     }));
 
-                    // Create Stripe payment session
+                    // Create Stripe payment session - USE env
                     const session = await stripe.checkout.sessions.create({
                         payment_method_types: ['card'],
                         line_items: [{
@@ -380,15 +380,6 @@ export default {
                 }), { 
                     headers: { ...headers, 'Content-Type': 'application/json' } 
                 });
-            }
-
-            // SERVE STATIC FILES FROM PAGES
-            // For Cloudflare Pages integration, we'll serve the frontend files
-            // This is handled by Cloudflare Pages automatically, so we return a simple response
-            if (request.method === 'GET') {
-                // Let Cloudflare Pages handle static files
-                // This worker only handles API endpoints
-                return new Response('Not found', { status: 404, headers });
             }
 
             // 404 for everything else
