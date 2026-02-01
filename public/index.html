@@ -15,7 +15,6 @@
     <meta property="og:image" content="https://diacriticefix.ro/logo.png">
     <link rel="canonical" href="https://diacriticefix.ro">
     <link rel="stylesheet" href="style.css">
-    <link rel="sitemap" type="application/xml" title="Sitemap" href="/sitemap.xml">
     <link rel="icon" type="image/png" href="favicon.png">
     <!-- Stripe.js -->
     <script src="https://js.stripe.com/v3/"></script>
@@ -109,7 +108,10 @@
         
         <div class="payment-container hidden" id="paymentContainer">
             <h3>Completează plata pentru a descărca PDF-ul reparat</h3>
-            <button class="btn" id="payButton">Plătește 1.99€ cu cardul</button>
+            <stripe-buy-button
+              buy-button-id="buy_btn_1St4J7RvhJNCyR7MxKUWRDIf"
+              publishable-key="pk_live_51SbKtIRvhJNCyR7MHEJZnVmJW1kgGTc6KysHLY45PzkLBTv6FrhomUbuyiN3mZbIOKOW3YlS8ksDeYqkIZR25Pyq006CJY9pzw">
+            </stripe-buy-button>
             <p class="small-text">Plata securizată prin Stripe. Acceptăm toate cardurile majore.</p>
         </div>
         
@@ -132,11 +134,11 @@
             
             <div class="faq-item">
                 <div class="faq-header">
-                    <h3>Este legal să folosim acest serviciu?</h3>
+                    <h3>Este legal să folosesc acest serviciu?</h3>
                     <span>+</span>
                 </div>
                 <div class="faq-content">
-                    <p>Da! Reparăm doar diacriticele. Toate drepturile asupra documentului rămân ale tale. Conform <a href="https://www.cdep.ro/pls/dosar/legis.act?sec=1&id=10786" target="_blank">Legii 8/1996</a>, nu deținem drepturi asupra conținutului tău.</p>
+                    <p>Da! Reparăm doar diacriticele. Toate drepturile asupra documentului rămân ale tale. Conform Legii nr. 8/1996, nu deținem drepturi asupra conținutului tău.</p>
                 </div>
             </div>
             
@@ -195,13 +197,6 @@
         </div>
     </div>
     
-    <!-- Thank You Page (shown after payment) -->
-    <div class="payment-thankyou hidden" id="thankYouPage">
-        <h2>Mulțumim pentru plată!</h2>
-        <p>PDF-ul dumneavoastră se va descărca automat în 5 secunde.</p>
-        <a href="#" class="download-link hidden" id="downloadLink">Descarcă acum</a>
-    </div>
-    
     <footer>
         <div class="container">
             <div class="footer-content">
@@ -236,9 +231,6 @@
         const termsPopup = document.getElementById('termsPopup');
         const privacyPopup = document.getElementById('privacyPopup');
         const paymentContainer = document.getElementById('paymentContainer');
-        const payButton = document.getElementById('payButton');
-        const thankYouPage = document.getElementById('thankYouPage');
-        const downloadLink = document.getElementById('downloadLink');
         const filePreview = document.getElementById('filePreview');
         const uploadInstructions = document.getElementById('uploadInstructions');
         const fileName = document.getElementById('fileName');
@@ -250,9 +242,6 @@
         const progressFill = document.getElementById('progressFill');
         let uploadedFile = null;
         let processingFileId = null;
-        
-        // Stripe initialization with live key
-        const stripe = Stripe('pk_live_51SbKtIRvhJNCyR7MHEJZnVmJW1kgGTc6KysHLY45PzkLBTv6FrhomUbuyiN3mZbIOKOW3YlS8ksDeYqkIZR25Pyq006CJY9pzw');
         
         // Event listeners
         browseBtn.addEventListener('click', () => pdfUpload.click());
@@ -277,11 +266,11 @@
         
         document.getElementById('privacyAgreeBtn').addEventListener('click', () => {
             privacyPopup.classList.remove('active');
-            startProcessing();
+            processAndPrepareForPayment();
         });
         
         // PDF processing and payment preparation
-        async function startProcessing() {
+        async function processAndPrepareForPayment() {
             if (!uploadedFile) {
                 alert('Vă rugăm să încărcați un fișier PDF!');
                 return;
@@ -292,9 +281,6 @@
                 repairBtn.disabled = true;
                 repairBtn.textContent = 'Se procesează...';
                 repairBtn.classList.add('btn-processing');
-                thankYouPage.classList.add('hidden');
-                downloadLink.classList.add('hidden');
-                uploadStatus.classList.add('hidden');
                 processingStatus.classList.remove('hidden');
                 
                 // Reset progress
@@ -347,11 +333,6 @@
                         processingStatus.classList.add('hidden');
                         paymentContainer.classList.remove('hidden');
                         
-                        // Set up payment button
-                        payButton.onclick = function() {
-                            window.location.href = result.paymentUrl;
-                        };
-                        
                     } catch (error) {
                         clearInterval(progressInterval);
                         console.error('Error processing PDF:', error);
@@ -366,8 +347,8 @@
                 reader.readAsDataURL(uploadedFile);
                 
             } catch (error) {
-                console.error('Error in startProcessing:', error);
-                alert('A apărut o eroare. Vă rugăm să încercați din nou.\n\n' + error.message);
+                console.error('Error processing PDF:', error);
+                alert('A apărut o eroare la procesarea fișierului. Vă rugăm să încercați din nou.\n\n' + error.message);
                 repairBtn.disabled = false;
                 repairBtn.textContent = 'Repară PDF-ul acum';
                 repairBtn.classList.remove('btn-processing');
@@ -483,29 +464,6 @@
                     header.querySelector('span').textContent = '+';
                 }
             });
-        });
-        
-        // Reset UI after download or on page refresh
-        function resetUploadUI() {
-            filePreview.classList.add('hidden');
-            uploadInstructions.classList.remove('hidden');
-            uploadStatus.classList.add('hidden');
-            dropArea.classList.remove('file-uploaded');
-            repairBtn.disabled = true;
-            repairBtn.textContent = 'Repară PDF-ul acum';
-            repairBtn.classList.remove('btn-processing');
-            pdfUpload.value = '';
-            uploadedFile = null;
-            processingFileId = null;
-            paymentContainer.classList.add('hidden');
-            processingStatus.classList.add('hidden');
-        }
-        
-        // Reset UI if page is refreshed after payment
-        window.addEventListener('beforeunload', function() {
-            if (!thankYouPage.classList.contains('hidden')) {
-                resetUploadUI();
-            }
         });
     </script>
 </body>

@@ -1,18 +1,34 @@
 name = "diacriticefix"
 main = "src/index.js"
 compatibility_date = "2024-01-01"
-compatibility_flags = ["nodejs_compat"]
 
-[env.production]
-[env.production.vars]
-BASE_URL = "https://diacriticefix.pages.dev"
+# Environment variables
+[vars]
+PDFCO_API_KEY = "ghamtech@ghamtech.com_ZBZ78mtRWz6W5y5ltoi29Q4W1387h8PGiKtRmRCiY2hSGAN0TjZGVUyl1mqSp5F8"
+STRIPE_SECRET_KEY = "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"
+BASE_URL = "https://diacriticefix.ro"
 
-# Routes that should go to the worker (not static files)
-[[env.production.routes]]
-pattern = "diacriticefix.pages.dev/*"
-zone_id = ""
+# Build configuration
+[build]
+command = "npm install"
 
-# For local development
-[env.development]
-[env.development.vars]
-BASE_URL = "http://localhost:8787"
+# Routes for the worker
+[[routes]]
+pattern = "diacriticefix.ro/process-and-pay"
+zone_name = "diacriticefix.ro"
+
+[[routes]]
+pattern = "diacriticefix.ro/verify-payment"
+zone_name = "diacriticefix.ro"
+
+[[routes]]
+pattern = "diacriticefix.ro/get-file"
+zone_name = "diacriticefix.ro"
+
+[[routes]]
+pattern = "diacriticefix.ro/test-api"
+zone_name = "diacriticefix.ro"
+
+[[routes]]
+pattern = "diacriticefix.ro/stripe-webhook"
+zone_name = "diacriticefix.ro"

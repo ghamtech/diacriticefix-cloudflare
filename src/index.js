@@ -1,34 +1,31 @@
-// This is our main backend code that runs on Cloudflare
-// It handles PDF processing, payments, and file delivery
+// Cloudflare Worker for PDF Diacritics Repair
+// This file runs on Cloudflare's edge network
 
-// Import required modules
 import Stripe from 'stripe';
-import axios from 'axios';
-import FormData from 'form-data';
 import { v4 as uuidv4 } from 'uuid';
 
-// Initialize Stripe with the secret key from environment
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+// Initialize Stripe with environment variables
+const stripe = new Stripe(ENV.STRIPE_SECRET_KEY, {
   apiVersion: '2024-06-20'
 });
 
-// In-memory storage for processed files (temporary)
+// In-memory storage for processed files
 const fileStorage = new Map();
 
 // PDF.co API service class
 class PdfService {
     constructor() {
-        // Use environment variable or fallback key
-        this.apiKey = process.env.PDFCO_API_KEY || 'ghamtech@ghamtech.com_ZBZ78mtRWz6W5y5ltoi29Q4W1387h8PGiKtRmRCiY2hSGAN0TjZGVUyl1mqSp5F8';
+        // Use environment variable or fallback
+        this.apiKey = ENV.PDFCO_API_KEY || 'ghamtech@ghamtech.com_ZBZ78mtRWz6W5y5ltoi29Q4W1387h8PGiKtRmRCiY2hSGAN0TjZGVUyl1mqSp5F8';
         this.baseUrl = 'https://api.pdf.co/v1';
         this.headers = {
+            'Content-Type': 'application/json',
             'x-api-key': this.apiKey
         };
     }
     
     // Fix Romanian diacritics in text
     fixDiacritics(text) {
-        // Define the mapping of broken diacritics to correct ones
         const replacements = {
             'Ã£Æ\'Â¢': 'â',
             'Ã£Æ\'â€ž': 'ă',
@@ -40,9 +37,7 @@ class PdfService {
             'â€žÆ\'': 'ă',
             'Ã¢': 'â',
             'Â¢': '',
-            'â€': '',
             'â€œ': '"',
-            'â€': '"',
             'ÅŸ': 'ș',
             'Å£': 'ț',
             'Äƒ': 'ă',
@@ -56,92 +51,43 @@ class PdfService {
             'Å¢': 'Ț'
         };
         
-        // Start with the original text
         let fixedText = text;
-        
-        // Replace each broken diacritic with the correct one
         Object.entries(replacements).forEach(([bad, good]) => {
-            // Create a regular expression to find all instances of the broken diacritic
             const regex = new RegExp(bad.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
-            // Replace all occurrences
             fixedText = fixedText.replace(regex, good);
         });
         
         return fixedText;
     }
 
-    // Upload file to PDF.co and get URL
-    async uploadFile(fileBuffer, fileName = 'document.pdf') {
-        try {
-            console.log('Uploading file to PDF.co...');
-            
-            // Create form data for file upload
-            const form = new FormData();
-            form.append('file', fileBuffer, {
-                filename: fileName,
-                contentType: 'application/pdf'
-            });
-            
-            // Get headers for form data
-            const formHeaders = form.getHeaders();
-            
-            // Make API request to upload file
-            const response = await axios.post(
-                `${this.baseUrl}/file/upload`,
-                form,
-                {
-                    headers: {
-                        ...this.headers,
-                        ...formHeaders
-                    },
-                    maxContentLength: Infinity,
-                    maxBodyLength: Infinity,
-                    timeout: 60000
-                }
-            );
-            
-            // Check if the response indicates an error
-            if (response.data.error) {
-                throw new Error(response.data.message || 'Error uploading file to PDF.co');
-            }
-            
-            // Clean and return the URL
-            const fileUrl = response.data.url.trim();
-            console.log('File uploaded successfully. URL:', fileUrl);
-            return fileUrl;
-        } catch (error) {
-            console.error('Error uploading file:', error.response?.data || error.message);
-            throw error;
-        }
-    }
-
     // Extract text from PDF using URL
     async extractTextFromUrl(fileUrl) {
         try {
-            console.log('Extracting text from PDF at:', fileUrl);
-            
-            // Make API request to extract text
-            const response = await axios.post(
+            const response = await fetch(
                 `${this.baseUrl}/pdf/convert/to/text`,
                 {
-                    url: fileUrl,
-                    inline: true
-                },
-                {
+                    method: 'POST',
                     headers: this.headers,
-                    timeout: 60000
+                    body: JSON.stringify({
+                        url: fileUrl,
+                        inline: true
+                    })
                 }
             );
             
-            // Check if the response indicates an error
-            if (response.data.error) {
-                throw new Error(response.data.message || 'Error extracting text from PDF');
+            const data = await response.json();
+            
+            if (!response.ok) {
+                throw new Error(data.message || 'Error extracting text from PDF');
             }
             
-            console.log('Text extraction completed');
-            return response.data.text;
+            if (data.error) {
+                throw new Error(data.message || 'Error extracting text from PDF');
+            }
+            
+            return data.text;
         } catch (error) {
-            console.error('Error extracting text:', error.response?.data || error.message);
+            console.error('Error extracting text:', error);
             throw error;
         }
     }
@@ -151,21 +97,43 @@ class PdfService {
         try {
             console.log('Starting PDF processing for file:', fileName);
             
-            // Step 1: Upload file to get URL
-            const fileUrl = await this.uploadFile(fileBuffer, fileName);
+            // Convert buffer to base64 for PDF.co upload
+            const base64File = fileBuffer.toString('base64');
+            
+            // Upload file to PDF.co
+            const uploadResponse = await fetch(
+                `${this.baseUrl}/file/upload`,
+                {
+                    method: 'POST',
+                    headers: {
+                        ...this.headers,
+                        'Content-Type': 'application/octet-stream'
+                    },
+                    body: base64File
+                }
+            );
+            
+            const uploadData = await uploadResponse.json();
+            
+            if (!uploadResponse.ok || uploadData.error) {
+                throw new Error(uploadData.message || 'Error uploading file to PDF.co');
+            }
+            
+            const fileUrl = uploadData.url;
             console.log('File uploaded successfully, URL:', fileUrl);
             
-            // Step 2: Extract text from PDF
+            // Extract text from the uploaded PDF
             const originalText = await this.extractTextFromUrl(fileUrl);
             console.log('Text extracted successfully');
             
-            // Step 3: Fix diacritics
+            // Fix diacritics
             const fixedText = this.fixDiacritics(originalText);
+            
             console.log('Diacritics fixed. Comparison:');
             console.log('Original text length:', originalText.length);
             console.log('Fixed text length:', fixedText.length);
             
-            // Step 4: Create the fixed content
+            // Create the processed content
             const fileId = uuidv4();
             const fixedContent = `PDF repaired successfully!
 Original file: ${fileName}
@@ -180,7 +148,7 @@ ${fixedText.substring(0, 500)}
             console.log('PDF processing completed successfully');
             return {
                 fileId: fileId,
-                processedPdf: Buffer.from(fixedContent, 'utf-8'),
+                processedPdf: fixedContent,
                 fileName: fileName
             };
             
@@ -188,14 +156,13 @@ ${fixedText.substring(0, 500)}
             console.error('Critical error in PDF processing:', error);
             console.error('Error details:', {
                 message: error.message,
-                response: error.response?.data,
-                status: error.response?.status
+                stack: error.stack
             });
             
-            // Return a fallback result so the user can still proceed
+            // Return a fallback result
             return {
                 fileId: uuidv4(),
-                processedPdf: Buffer.from('Error processing PDF. Please try again with a different file or contact support.'),
+                processedPdf: 'Error processing PDF. Please try again with a different file or contact support.',
                 fileName: fileName,
                 error: error.message
             };
@@ -205,19 +172,19 @@ ${fixedText.substring(0, 500)}
 
 // Main Cloudflare Worker
 export default {
-    async fetch(request, env) {
+    async fetch(request, env, ctx) {
         try {
-            // Security headers to prevent issues with Stripe and other services
+            // Security headers
             const headers = {
                 'Access-Control-Allow-Origin': '*',
                 'Access-Control-Allow-Headers': 'Content-Type',
                 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-                'Content-Security-Policy': "default-src 'self' https://js.stripe.com https://checkout.stripe.com https://buy.stripe.com https://*.stripe.com https://api.pdf.co; script-src 'self' 'unsafe-inline' https://js.stripe.com https://checkout.stripe.com https://buy.stripe.com https://*.stripe.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' https://*.stripe.com https://diacriticefix.pages.dev https://pdf-temp-files.s3.us-west-2.amazonaws.com; connect-src 'self' https://api.pdf.co https://api.stripe.com https://diacriticefix.pages.dev https://*.stripe.com; frame-src 'self' https://js.stripe.com https://checkout.stripe.com https://buy.stripe.com https://*.stripe.com; font-src 'self' https://fonts.gstatic.com;",
+                'Content-Security-Policy': "default-src 'self' https://js.stripe.com https://checkout.stripe.com https://buy.stripe.com https://*.stripe.com https://api.pdf.co; script-src 'self' 'unsafe-inline' https://js.stripe.com https://checkout.stripe.com https://buy.stripe.com https://*.stripe.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' https://*.stripe.com https://diacriticefix.ro https://pdf-temp-files.s3.us-west-2.amazonaws.com; connect-src 'self' https://api.pdf.co https://api.stripe.com https://diacriticefix.ro https://*.stripe.com; frame-src 'self' https://js.stripe.com https://checkout.stripe.com https://buy.stripe.com https://*.stripe.com; font-src 'self' https://fonts.gstatic.com;",
                 'X-Frame-Options': 'SAMEORIGIN',
                 'X-Content-Type-Options': 'nosniff'
             };
 
-            // Handle preflight requests (browser checks)
+            // Handle preflight requests
             if (request.method === 'OPTIONS') {
                 return new Response(null, { headers });
             }
@@ -250,7 +217,7 @@ export default {
                     const processedFile = await pdfService.processPdfFile(fileBuffer, fileName);
                     console.log('PDF processing completed', processedFile);
                     
-                    // Save file temporarily in memory
+                    // Store file temporarily in memory
                     fileStorage.set(processedFile.fileId, {
                         content: processedFile.processedPdf,
                         fileName: processedFile.fileName,
@@ -258,7 +225,12 @@ export default {
                     });
                     
                     // Auto-cleanup after 10 minutes
-                    setTimeout(() => fileStorage.delete(processedFile.fileId), 10 * 60 * 1000);
+                    ctx.waitUntil(new Promise(resolve => {
+                        setTimeout(() => {
+                            fileStorage.delete(processedFile.fileId);
+                            resolve();
+                        }, 10 * 60 * 1000);
+                    }));
 
                     // Create Stripe payment session
                     const session = await stripe.checkout.sessions.create({
@@ -275,8 +247,8 @@ export default {
                             quantity: 1,
                         }],
                         mode: 'payment',
-                        success_url: `${env.BASE_URL || 'https://diacriticefix.pages.dev'}/download.html?file_id=${processedFile.fileId}&session_id={CHECKOUT_SESSION_ID}`,
-                        cancel_url: `${env.BASE_URL || 'https://diacriticefix.pages.dev'}/?cancelled=true`,
+                        success_url: `${env.BASE_URL || 'https://diacriticefix.ro'}/download.html?file_id=${processedFile.fileId}&session_id={CHECKOUT_SESSION_ID}`,
+                        cancel_url: `${env.BASE_URL || 'https://diacriticefix.ro'}/?cancelled=true`,
                         client_reference_id: processedFile.fileId,
                         metadata: {
                             fileId: processedFile.fileId,
@@ -297,12 +269,12 @@ export default {
                     
                 } catch (processingError) {
                     console.error('Error during file processing:', processingError);
-                    // Still return success so the frontend can proceed with payment
+                    // Still return success to allow payment flow to continue
                     return new Response(JSON.stringify({
-                        success: true, // Allow the process to continue
+                        success: true,
                         fileId: uuidv4(),
                         sessionId: 'error_session_' + Date.now(),
-                        paymentUrl: `${env.BASE_URL || 'https://diacriticefix.pages.dev'}/download.html?error=processing_failed&message=${encodeURIComponent(processingError.message)}`,
+                        paymentUrl: `${env.BASE_URL || 'https://diacriticefix.ro'}/download.html?error=processing_failed&message=${encodeURIComponent(processingError.message)}`,
                         error: processingError.message,
                         isFallback: true
                     }), { 
@@ -324,17 +296,16 @@ export default {
                 }
 
                 try {
-                    // Retrieve the session from Stripe
                     const session = await stripe.checkout.sessions.retrieve(sessionId);
                     
                     if (session.payment_status !== 'paid') {
+                        console.log('Payment not completed:', session.payment_status);
                         return new Response(JSON.stringify({ error: 'Payment not completed' }), {
                             status: 400,
                             headers: { ...headers, 'Content-Type': 'application/json' }
                         });
                     }
                     
-                    // Get file ID from client reference ID
                     const fileId = session.client_reference_id;
                     
                     if (!fileId) {
@@ -366,7 +337,7 @@ export default {
                 }
             }
 
-            // GET PROCESSED FILE AFTER PAYMENT
+            // GET PROCESSED FILE
             if (path === '/get-file' && request.method === 'GET') {
                 const fileId = url.searchParams.get('file_id');
                 
@@ -379,6 +350,7 @@ export default {
 
                 const file = fileStorage.get(fileId);
                 if (!file) {
+                    console.log('File not found:', fileId);
                     return new Response(JSON.stringify({ error: 'File not found or has expired' }), {
                         status: 404,
                         headers: { ...headers, 'Content-Type': 'application/json' }
@@ -387,12 +359,13 @@ export default {
 
                 // Delete file after retrieval (cleanup)
                 fileStorage.delete(fileId);
+                console.log('File deleted after retrieval:', fileId);
                 
                 return new Response(file.content, {
                     headers: {
                         ...headers,
-                        'Content-Type': 'application/pdf',
-                        'Content-Disposition': `attachment; filename="${file.fileName}"`
+                        'Content-Type': 'text/plain',
+                        'Content-Disposition': `attachment; filename="${file.fileName || 'document_reparat.txt'}"`
                     }
                 });
             }
@@ -409,18 +382,13 @@ export default {
                 });
             }
 
-            // SERVE STATIC PAGES (FRONTEND)
+            // SERVE STATIC FILES FROM PAGES
+            // For Cloudflare Pages integration, we'll serve the frontend files
+            // This is handled by Cloudflare Pages automatically, so we return a simple response
             if (request.method === 'GET') {
-                if (path === '/' || path === '/index.html') {
-                    return new Response(indexHtml, { 
-                        headers: { ...headers, 'Content-Type': 'text/html' } 
-                    });
-                }
-                if (path === '/download.html') {
-                    return new Response(downloadHtml, { 
-                        headers: { ...headers, 'Content-Type': 'text/html' } 
-                    });
-                }
+                // Let Cloudflare Pages handle static files
+                // This worker only handles API endpoints
+                return new Response('Not found', { status: 404, headers });
             }
 
             // 404 for everything else
@@ -430,98 +398,14 @@ export default {
             console.error('❌ ERROR:', error);
             return new Response(JSON.stringify({ 
                 error: 'Server error', 
-                details: error.message 
+                message: error.message 
             }), { 
                 status: 500, 
                 headers: { 
-                    'Access-Control-Allow-Origin': '*', 
-                    'Access-Control-Allow-Headers': 'Content-Type', 
-                    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' 
+                    ...headers, 
+                    'Content-Type': 'application/json' 
                 } 
             });
         }
     }
 };
-
-// Minimal HTML for testing
-const indexHtml = `
-<!DOCTYPE html>
-<html lang="ro">
-<head>
-  <meta charset="UTF-8">
-  <title>DiacriticeFix - Cloudflare Version</title>
-  <style>
-    body { font-family: Arial; text-align: center; padding: 50px; background: #f0f0f0; }
-    h1 { color: #e91e63; }
-    .success { background: white; padding: 30px; border-radius: 10px; margin: 20px auto; max-width: 600px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-    button { background: #4CAF50; color: white; border: none; padding: 15px 30px; font-size: 18px; border-radius: 5px; cursor: pointer; }
-    button:hover { background: #45a049; }
-  </style>
-</head>
-<body>
-  <h1>🎉 DiacriticeFix is LIVE on Cloudflare! 🎉</h1>
-  <div class="success">
-    <h2>✅ Setup Complete!</h2>
-    <p>Your app is working perfectly on Cloudflare Workers!</p>
-    <p><strong>Next step:</strong> Deploy your real frontend files to Cloudflare Pages</p>
-    <button onclick="window.location.href='/debug.html'">Test API Connection</button>
-  </div>
-  <p style="margin-top: 30px; color: #666">
-    GhamTech S.R.L. | CUI: 50686976 | Bacău, România
-  </p>
-</body>
-</html>
-`;
-
-const downloadHtml = `
-<!DOCTYPE html>
-<html lang="ro">
-<head>
-  <meta charset="UTF-8">
-  <title>Descarcă PDF-ul reparat</title>
-  <style>
-    body { font-family: Arial; text-align: center; padding: 50px; background: #f0f0f0; }
-    .container { background: white; padding: 40px; border-radius: 10px; max-width: 500px; margin: 20px auto; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-    h1 { color: #1a237e; }
-    .download-btn { 
-      display: inline-block; 
-      background: #4CAF50; 
-      color: white; 
-      padding: 15px 30px; 
-      text-decoration: none; 
-      border-radius: 5px; 
-      margin-top: 20px; 
-      font-size: 18px;
-    }
-    .download-btn:hover { background: #45a049; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h1>✅ Plată confirmată!</h1>
-    <p>PDF-ul tău va fi descărcat automat în 3 secunde...</p>
-    <a href="#" class="download-btn" id="downloadLink">Descarcă acum</a>
-  </div>
-  <script>
-    // Auto-download after 3 seconds
-    setTimeout(() => {
-      const urlParams = new URLSearchParams(window.location.search);
-      const fileId = urlParams.get('file_id');
-      if (fileId) {
-        window.location.href = '/get-file?file_id=' + fileId;
-      }
-    }, 3000);
-    
-    // Manual download button
-    document.getElementById('downloadLink').onclick = (e) => {
-      e.preventDefault();
-      const urlParams = new URLSearchParams(window.location.search);
-      const fileId = urlParams.get('file_id');
-      if (fileId) {
-        window.location.href = '/get-file?file_id=' + fileId;
-      }
-    };
-  </script>
-</body>
-</html>
-`;
