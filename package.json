@@ -1,21 +1,22 @@
 {
   "name": "diacriticefix",
   "version": "1.0.0",
-  "description": "Fix diacritics in PDFs",
+  "description": "Web application for fixing diacritics in PDF files",
   "main": "src/index.js",
   "scripts": {
-    "dev": "wrangler dev",
+    "start": "wrangler dev",
     "deploy": "wrangler deploy"
   },
   "author": "GhamTech S.R.L.",
   "license": "MIT",
   "dependencies": {
+    "stripe": "^14.15.0",
     "axios": "^1.6.8",
     "form-data": "^4.0.0",
-    "stripe": "^14.15.0",
     "uuid": "^9.0.1"
   },
   "devDependencies": {
-    "wrangler": "^4.61.1"
+    "@cloudflare/workers-types": "^4.20240208.0",
+    "wrangler": "^3.0.0"
   }
 }
