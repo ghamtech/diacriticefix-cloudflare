@@ -2,7 +2,7 @@ name = "diacriticefix"
 main = "src/index.js"
 compatibility_date = "2024-01-01"
 
-# Environment variables
+# Environment variables (non-sensitive)
 [vars]
 BASE_URL = "https://diacriticefix.ro"
 

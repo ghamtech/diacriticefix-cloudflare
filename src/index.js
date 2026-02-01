@@ -4,19 +4,14 @@
 import Stripe from 'stripe';
 import { v4 as uuidv4 } from 'uuid';
 
-// Initialize Stripe with environment variables - CORRECTED!
-const stripe = new Stripe(env.STRIPE_SECRET_KEY, {
-  apiVersion: '2024-06-20'
-});
-
 // In-memory storage for processed files
 const fileStorage = new Map();
 
 // PDF.co API service class
 class PdfService {
-    constructor(env) { // Pass env to constructor
-        // Use environment variable or fallback - CORRECTED!
-        this.apiKey = env.PDFCO_API_KEY || 'ghamtech@ghamtech.com_ZBZ78mtRWz6W5y5ltoi29Q4W1387h8PGiKtRmRCiY2hSGAN0TjZGVUyl1mqSp5F8';
+    constructor(apiKey) {
+        // Use the provided API key
+        this.apiKey = apiKey || 'ghamtech@ghamtech.com_ZBZ78mtRWz6W5y5ltoi29Q4W1387h8PGiKtRmRCiY2hSGAN0TjZGVUyl1mqSp5F8';
         this.baseUrl = 'https://api.pdf.co/v1';
         this.headers = {
             'Content-Type': 'application/json',
@@ -170,9 +165,14 @@ ${fixedText.substring(0, 500)}
     }
 }
 
-// Main Cloudflare Worker - CORRECTED!
+// Main Cloudflare Worker
 export default {
     async fetch(request, env, ctx) {
+        // ✅ CORRECT: Initialize Stripe INSIDE the fetch handler where env is available
+        const stripe = new Stripe(env.STRIPE_SECRET_KEY, {
+            apiVersion: '2024-06-20'
+        });
+        
         try {
             // Security headers
             const headers = {
@@ -208,8 +208,8 @@ export default {
                 }
 
                 try {
-                    // Process PDF file - PASS env to PdfService
-                    const pdfService = new PdfService(env);
+                    // ✅ CORRECT: Pass env.PDFCO_API_KEY to PdfService
+                    const pdfService = new PdfService(env.PDFCO_API_KEY);
                     const fileBuffer = Buffer.from(fileData, 'base64');
                     
                     console.log('File buffer created, size:', fileBuffer.length);
@@ -232,7 +232,7 @@ export default {
                         }, 10 * 60 * 1000);
                     }));
 
-                    // Create Stripe payment session - USE env
+                    // Create Stripe payment session
                     const session = await stripe.checkout.sessions.create({
                         payment_method_types: ['card'],
                         line_items: [{
