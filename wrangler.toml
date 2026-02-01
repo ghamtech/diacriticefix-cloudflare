@@ -4,7 +4,6 @@ compatibility_date = "2024-01-01"
 
 # Environment variables
 [vars]
-PDFCO_API_KEY = "ghamtech@ghamtech.com_ZBZ78mtRWz6W5y5ltoi29Q4W1387h8PGiKtRmRCiY2hSGAN0TjZGVUyl1mqSp5F8"
 BASE_URL = "https://diacriticefix.ro"
 
 # Build configuration
