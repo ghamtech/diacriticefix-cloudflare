@@ -177,11 +177,9 @@ export default {
             // Security headers
             const headers = {
                 'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Headers': 'Content-Type',
                 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-                'Content-Security-Policy': "default-src 'self' https://js.stripe.com https://checkout.stripe.com https://buy.stripe.com https://*.stripe.com https://api.pdf.co; script-src 'self' 'unsafe-inline' https://js.stripe.com https://checkout.stripe.com https://buy.stripe.com https://*.stripe.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' https://*.stripe.com https://diacriticefix.ro https://pdf-temp-files.s3.us-west-2.amazonaws.com; connect-src 'self' https://api.pdf.co https://api.stripe.com https://diacriticefix.ro https://*.stripe.com; frame-src 'self' https://js.stripe.com https://checkout.stripe.com https://buy.stripe.com https://*.stripe.com; font-src 'self' https://fonts.gstatic.com;",
-                'X-Frame-Options': 'SAMEORIGIN',
-                'X-Content-Type-Options': 'nosniff'
+                'Access-Control-Allow-Headers': 'Content-Type',
+                'Content-Type': 'application/json'
             };
 
             // Handle preflight requests

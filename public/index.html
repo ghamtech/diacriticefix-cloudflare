@@ -308,15 +308,11 @@
                         console.log('Starting file processing...');
                         
                         // Send to Cloudflare Worker for processing
+                        // This will be handled by Pages Functions and routed to your Worker
                         const response = await fetch('/process-and-pay', {
                             method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
-                            body: JSON.stringify({
-                                fileData: base64File,
-                                fileName: uploadedFile.name
-                            })
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ fileData: base64File, fileName: uploadedFile.name })
                         });
                         
                         const result = await response.json();
